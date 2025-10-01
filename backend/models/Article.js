@@ -27,7 +27,7 @@ const articleSchema = new mongoose.Schema({
   course: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Course',
-    required: [true, 'Associated course is required']
+    required: false // Made optional for general news articles
   },
   category: {
     type: String,

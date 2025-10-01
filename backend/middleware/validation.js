@@ -15,8 +15,8 @@ const validateRegister = [
     .withMessage('Password must be at least 6 characters long'),
   body('role')
     .optional()
-    .isIn(['student', 'professor'])
-    .withMessage('Role must be either student or professor')
+    .isIn(['student', 'professor', 'admin'])
+    .withMessage('Role must be student, professor, or admin')
 ];
 
 const validateLogin = [

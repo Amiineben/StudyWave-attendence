@@ -13,6 +13,7 @@ const authRoutes = require('./routes/authRoutes');
 const courseRoutes = require('./routes/courseRoutes');
 const articleRoutes = require('./routes/articleRoutes');
 const attendanceRoutes = require('./routes/attendanceRoutes');
+const newsRoutes = require('./routes/newsRoutes');
 
 // Import middleware
 const { developmentLogger, productionLogger, errorLogger } = require('./middleware/logger');
@@ -110,6 +111,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/articles', articleRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/news', newsRoutes);
 
 // Health check endpoint
 app.get('/api/health', async (req, res) => {
@@ -118,16 +120,55 @@ app.get('/api/health', async (req, res) => {
     res.status(200).json({
       status: 'OK',
       message: 'StudyWave API is running',
-      timestamp: new Date().toISOString(),
       database: dbHealth,
       environment: process.env.NODE_ENV || 'development',
-      version: '1.0.0'
+      version: '1.0.0',
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.status(503).json({
+    res.status(500).json({
       status: 'ERROR',
-      message: 'Service unavailable',
+      message: 'Health check failed',
       timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
+});
+
+// Demo credentials endpoint
+app.get('/api/demo-credentials', async (req, res) => {
+  try {
+    const User = require('./models/User');
+    
+    const demoUsers = await User.find({
+      email: { $in: ['admin@studywave.ma', 'professor@studywave.ma', 'student@studywave.ma'] }
+    }).select('name email role department studentId');
+    
+    const credentials = demoUsers.map(user => ({
+      role: user.role,
+      email: user.email,
+      password: 'demo123',
+      name: user.name,
+      department: user.department,
+      studentId: user.studentId
+    }));
+    
+    res.status(200).json({
+      success: true,
+      message: 'Demo credentials available',
+      data: {
+        credentials,
+        instructions: {
+          frontend: 'http://localhost:8081',
+          backend: 'http://localhost:5000',
+          login: 'Use email and password to login'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get demo credentials',
       error: error.message
     });
   }

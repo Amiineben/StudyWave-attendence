@@ -49,7 +49,6 @@ const authenticate = async (req, res, next) => {
     
     res.status(500).json({
       success: false,
-      message: 'Authentication error.'
     });
   }
 };
@@ -81,8 +80,14 @@ const requireProfessor = authorize('professor');
 // Middleware to check if user is student
 const requireStudent = authorize('student');
 
+// Middleware to check if user is admin
+const requireAdmin = authorize('admin');
+
 // Middleware to allow both students and professors
 const requireUser = authorize('student', 'professor');
+
+// Middleware to allow admin or professor
+const requireAdminOrProfessor = authorize('admin', 'professor');
 
 // Middleware to check if user owns the resource or is authorized
 const checkOwnership = (resourceField = 'author') => {
@@ -145,13 +150,14 @@ const verifyToken = (token) => {
     return null;
   }
 };
-
 module.exports = {
   authenticate,
   authorize,
   requireProfessor,
   requireStudent,
+  requireAdmin,
   requireUser,
+  requireAdminOrProfessor,
   checkOwnership,
   optionalAuth,
   generateToken,

@@ -31,10 +31,26 @@ const register = async (req, res) => {
       name: name.trim(),
       email: email.toLowerCase().trim(),
       password,
-      role: role || 'student'
+      role: role || 'student',
+      // Add any additional fields from request body
+      ...(req.body.department && { department: req.body.department }),
+      ...(req.body.studentId && { studentId: req.body.studentId }),
+      ...(req.body.major && { major: req.body.major }),
+      ...(req.body.jobTitle && { jobTitle: req.body.jobTitle }),
+      ...(req.body.office && { office: req.body.office })
+    });
+
+    console.log('Creating user with data:', {
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      department: user.department,
+      studentId: user.studentId,
+      major: user.major
     });
 
     await user.save();
+    console.log('User saved successfully with ID:', user._id);
 
     // Generate token
     const token = generateToken(user._id);
@@ -57,6 +73,27 @@ const register = async (req, res) => {
 
   } catch (error) {
     console.error('Registration error:', error);
+    
+    // Handle specific MongoDB errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `${field} already exists`,
+        error: `Duplicate ${field}`
+      });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Registration failed',
@@ -178,7 +215,7 @@ const updateProfile = async (req, res) => {
     }
 
     const allowedUpdates = [
-      'name', 'avatar', 'phone', 'studentId', 'major', 'year', 
+      'name', 'email', 'avatar', 'phone', 'studentId', 'major', 'year', 
       'department', 'jobTitle', 'office'
     ];
     
@@ -188,6 +225,24 @@ const updateProfile = async (req, res) => {
         updates[key] = req.body[key];
       }
     });
+
+    // Special validation for email uniqueness
+    if (updates.email) {
+      const existingUser = await User.findOne({ 
+        email: updates.email.toLowerCase(),
+        _id: { $ne: req.user._id }
+      });
+      
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already exists'
+        });
+      }
+      
+      // Normalize email
+      updates.email = updates.email.toLowerCase();
+    }
 
     // Special validation for studentId uniqueness
     if (updates.studentId) {

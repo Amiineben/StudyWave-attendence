@@ -14,7 +14,12 @@ const {
 } = require('../controllers/authController');
 
 // Import middleware
-const { authenticate, requireProfessor } = require('../middleware/auth');
+const { 
+  authenticate, 
+  requireProfessor, 
+  requireStudent,
+  requireAdmin
+} = require('../middleware/auth');
 const {
   validateRegister,
   validateLogin,
@@ -37,7 +42,7 @@ router.put('/change-password', validateChangePassword, changePassword);
 router.post('/logout', logout);
 router.get('/verify-token', verifyToken);
 
-// Admin/Professor routes
-router.get('/users', requireProfessor, validatePagination, getAllUsers);
+// Admin routes
+router.get('/users', requireAdmin, validatePagination, getAllUsers);
 
 module.exports = router;
