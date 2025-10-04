@@ -71,6 +71,7 @@ class NewsScraperService {
         const summary = this.extractText($el, 'p, .summary, .excerpt, .description');
         const link = this.extractLink($el, 'a');
         const date = this.extractDate($el, '.date, .published, time');
+        const inlineImg = this.extractImage($el, source.url);
 
         if (title && summary) {
           articles.push({
@@ -84,10 +85,23 @@ class NewsScraperService {
             isImportant: this.isImportantNews(title, summary),
             tags: this.extractTags(title, summary),
             visibility: 'public',
-            status: 'published'
+            status: 'published',
+            imageUrl: inlineImg || null
           });
         }
       });
+
+      // Enrich with Open Graph images when inline image is missing
+      for (const art of articles) {
+        if (!art.imageUrl && art.externalUrl) {
+          try {
+            const og = await this.fetchOpenGraphImage(art.externalUrl);
+            if (og) art.imageUrl = og;
+          } catch (e) {
+            // ignore per-article OG failures
+          }
+        }
+      }
 
       return articles;
     } catch (error) {
@@ -113,7 +127,8 @@ class NewsScraperService {
    */
   extractLink($element, selector) {
     const href = $element.find(selector).first().attr('href') || $element.attr('href');
-    return href ? (href.startsWith('http') ? href : `https://www.men.gov.ma${href}`) : null;
+    if (!href) return null;
+    return this.resolveUrl(href, 'https://www.men.gov.ma');
   }
 
   /**
@@ -129,6 +144,51 @@ class NewsScraperService {
       }
     }
     return new Date();
+  }
+
+  /**
+   * Extract image URL from element
+   */
+  extractImage($element, baseUrl) {
+    // common image selectors
+    const $img = $element.find('img').first();
+    const src = ($img.attr('data-src') || $img.attr('src') || '').trim();
+    if (!src) return null;
+    return this.resolveUrl(src, baseUrl);
+  }
+
+  /**
+   * Resolve a possibly relative URL against a base
+   */
+  resolveUrl(url, base) {
+    try {
+      const u = new URL(url, base);
+      return u.href;
+    } catch {
+      return url;
+    }
+  }
+
+  /**
+   * Fetch Open Graph/Twitter image from a page
+   */
+  async fetchOpenGraphImage(pageUrl) {
+    try {
+      const res = await axios.get(pageUrl, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      const $ = cheerio.load(res.data);
+      const og = $('meta[property="og:image"]').attr('content') || $('meta[name="og:image"]').attr('content');
+      const tw = $('meta[name="twitter:image"]').attr('content') || $('meta[property="twitter:image"]').attr('content');
+      const href = og || tw || '';
+      if (!href) return null;
+      return this.resolveUrl(href, pageUrl);
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
@@ -217,8 +277,20 @@ For more details and official documentation, please check the Ministry of Educat
         });
 
         if (!existingArticle) {
+          const images = [];
+          if (articleData.imageUrl) {
+            images.push({
+              filename: 'external.jpg',
+              originalName: 'external',
+              url: articleData.imageUrl,
+              alt: articleData.title || '',
+              caption: articleData.source || ''
+            });
+          }
+
           const article = new Article({
             ...articleData,
+            images,
             author: authorId
           });
 
@@ -245,21 +317,36 @@ For more details and official documentation, please check the Ministry of Educat
       const parser = new Parser();
       const feed = await parser.parseURL(rssUrl);
 
-      const articles = feed.items.slice(0, 10).map(item => ({
-        title: this.cleanText(item.title || ''),
-        summary: this.cleanText(item.contentSnippet || item.content || ''),
-        content: this.generateContent(item.title, item.contentSnippet || item.content || ''),
-        source: feed.title || 'RSS Feed',
-        category: category,
-        externalUrl: item.link,
-        publishedAt: new Date(item.pubDate || item.isoDate || Date.now()),
-        isImportant: this.isImportantNews(item.title || '', item.contentSnippet || ''),
-        tags: this.extractTags(item.title || '', item.contentSnippet || ''),
-        visibility: 'public',
-        status: 'published'
-      }));
+      const results = [];
+      for (const item of feed.items.slice(0, 10)) {
+        const title = this.cleanText(item.title || '');
+        const summary = this.cleanText(item.contentSnippet || item.content || '');
+        if (!title || !summary) continue;
 
-      return articles.filter(article => article.title && article.summary);
+        // Try enclosure image first
+        const enclosureUrl = item.enclosure?.url || item.enclosures?.[0]?.url;
+        let imageUrl = enclosureUrl || null;
+        if (!imageUrl && item.link) {
+          imageUrl = await this.fetchOpenGraphImage(item.link);
+        }
+
+        results.push({
+          title,
+          summary,
+          content: this.generateContent(item.title, item.contentSnippet || item.content || ''),
+          source: feed.title || 'RSS Feed',
+          category: category,
+          externalUrl: item.link,
+          publishedAt: new Date(item.pubDate || item.isoDate || Date.now()),
+          isImportant: this.isImportantNews(item.title || '', item.contentSnippet || ''),
+          tags: this.extractTags(item.title || '', item.contentSnippet || ''),
+          visibility: 'public',
+          status: 'published',
+          imageUrl
+        });
+      }
+
+      return results;
     } catch (error) {
       console.error('Error fetching RSS:', error.message);
       return [];
